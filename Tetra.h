@@ -2,24 +2,33 @@
 #define Tetra_h__
 
 #include <string>
+#include "Element.h"
 
 class TetVertex;
 class TetHalfFace;
 
 class Tetra {
 public:
-	Tetra(int id, TetVertex *vers[4], std::string& property);
+	Tetra(int id, int index, TetVertex *vers[4], std::string& property = std::string(""));
+	Tetra(int id, int index, TetHalfFace *halfface, TetVertex *vertex, std::string& property = std::string(""));
 	~Tetra();
 	
 	int& index() { return m_index; }
 	int id() const { return m_id; }
-	TetHalfFace *halfface(int i) { return m_halffaces[i]; }
+	std::string& property() { return m_property; }
+	TetHalfFace *&halfface(int i) { return m_halffaces[i]; }
 	TetVertex *vertex(int i) { return m_vers[i]; }
+	bool& isValid() { return m_isvalid; }
+	
 private:
+
+	void createHalfFace(int start = 0);
 	int m_id;
 	int m_index;
 	TetVertex *m_vers[4];
 	TetHalfFace *m_halffaces[4];
 	std::string m_property;
+	bool m_isvalid;
 };
+
 #endif // Tetra_h__

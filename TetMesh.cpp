@@ -5,25 +5,21 @@
 #include "TetMesh.h"
 #include "Tetra.h"
 #include "Point.h"
-
+#include "Triple.h"
+#include "TetMeshUtility.h"
 #include <iostream>
 #include <fstream>
-#include <tuple>
-TetMesh::TetMesh() {
+#include <map>
+
+TetMesh::TetMesh()
+: m_next_vid(0), m_next_tid(0)
+{
 }
 
 TetMesh::~TetMesh() {
 }
 
 
-typedef std::pair<int, std::pair<int, int> > triple;
-triple construct_triple(TetHalfFace *halfface) {
-	int vids[3] = {halfface->vertex(0)->id(), halfface->vertex(1)->id(), halfface->vertex(2)->id()};
-	int mn = std::min(vids[0], std::min(vids[1], vids[2]));
-	int mx = std::max(vids[0], std::max(vids[1], vids[2]));
-	int mid = vids[0] + vids[1] + vids[2] - mn -mx;
-	return make_pair(mn, std::make_pair(mid, mx));
-}
 
 bool TetMesh::read(const char *filename) {
 	std::ifstream input(filename);
@@ -53,49 +49,67 @@ bool TetMesh::read(const char *filename) {
 
 	id2Ver.rehash(id2Ver.size());
 	id2Tetra.rehash(id2Tetra.size());
-
 	
-	stdext::hash_map<triple, TetFace*> tripleMap;
-	//create the half face 
+	m_next_vid = id2Ver.size();
+	m_next_tid = id2Tetra.size();
+	
+	//link vertex to tetra
 	for (stdext::hash_map<int, Tetra*>::iterator b = id2Tetra.begin(), e = id2Tetra.end(); b != e; ++b) {
 		Tetra *tet = (*b).second;
-		TetVertex *face[3];
-		for (int id = 0; id < 4; ++id) {
-			int j = 0;
-			for (int i = 0; i < 4; ++i) {
-				if (i == id) {
-					continue;
-				}
-				face[j] = tet->vertex(i);
-				++j;
-			}
-
-			if ((id % 2) == 1) {
-				std::swap(face[0], face[1]);
-			}
+		for (int i = 0; i < 4; ++i) {
+			TetVertex *tv = tet->vertex(i);
+			tv->add(tet);
 		}
-
-		TetHalfFace *hf = createTetHalfFace(face);
-		hf->index() = tet->index() * 4 + id;
-		triple tri = construct_triple(hf);	
-		TetFace *tface = tripleMap[tri];
-
-		if (!tface) {
-			tface = createTetFace(hf);
-			tripleMap[tri] = tface;
-		} else {
-			tface[1] =	hf;
-		}
-
-			
 	}
+
+	std::vector<TetHalfFace*> halffaces;
+	for (stdext::hash_map<int, Tetra*>::iterator b = id2Tetra.begin(), e = id2Tetra.end(); b != e; ++b) {
+		Tetra *tet = (*b).second;
+		for (int i = 0; i < 4; ++i) {
+			TetHalfFace *hf = tet->halfface(i);
+			halffaces.push_back(hf);
+		}
+	}
+
+	std::vector<TetFace*> faces;
+	TetMeshUtility::buildFaces(halffaces, faces);
+
+	std::vector<TetEdge*> edges;
+	TetMeshUtility::buildEdges(faces, edges);
+
 	return true;
 }
 
 void TetMesh::save(const char *filename) {
+	std::ofstream output(filename);
 
+	for (int vid = 0; vid < m_next_vid; ++vid) {
+		TetVertex *v = id2Ver[vid];
+		if (!v) {
+			continue;
+		}
+		output << "Vertex " << vid << " " 
+			<< v->point()[0] << " " 
+			<< v->point()[1] << " " 
+			<< v->point()[2] << " " << v->property() << "\n";
+	}
+
+	for (int tid = 0; tid < m_next_tid; ++tid) {
+		Tetra *t = id2Tetra[tid];
+		if (!t || !t->isValid())  {
+			continue;
+		}
+		output << "Tetrahedron " << tid << " "
+			<< t->vertex(0)->id() << " "
+			<< t->vertex(1)->id() << " "
+			<< t->vertex(2)->id() << " "
+			<< t->vertex(3)->id() << " " << t->property()<< "\n";
+		
+	}
+
+
+	output.close();	
 }
-
 
 TetVertex * TetMesh::createTetVertex(std::stringstream &ss) {
 	int id;
@@ -126,15 +140,6 @@ Tetra * TetMesh::createTetra(std::stringstream &ss) {
 		vers[i] = id2Ver[vids[i]];
 	}
 	getline(ss, property);
-	Tetra *tet = new Tetra(id, vers, property);
-	tet->index() = id2Tetra.size();
-
-	for (int i = 0; i < 4; ++i) {
-		vers[i]->add(tet);
-	}
-
-
-
-
+	Tetra *tet = new Tetra(id, id2Tetra.size(), vers, property);
 	return tet;
 }
